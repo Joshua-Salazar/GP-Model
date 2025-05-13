@@ -1,23 +1,19 @@
-#!/usr/bin/env python
 #!/usr/bin/env python3
 """
-cli.backtest
-============
+cli.backtest (risk-stripped)
+============================
 
-Light-weight event–loop that **replays a historical data folder** through the
-GP + ANN stack and writes a performance report:
+Light-weight event-loop that **replays a historical data folder** through the
+GP + ANN stack and records the daily residual-alpha signal – nothing else.
 
-* daily RV signal for every illiquid knot
-* realised PnL (mark-to-market + carry/roll)
-* notional & DV01 usage
-* tear-sheet summary (CAGR, vol, Sharpe, max-DD)
-
-Only **marginal glue** lives here – all finance/math is in
-`utils.calibration`, `gp.tiered_gp`, `ann.residual_net`, *etc.*.
+Removed functionality
+---------------------
+* bucket-DV01, carry/roll, notional usage
+* realised PnL & performance tear-sheet
+* all DV01 / PnL plots
 
 Typical usage
 -------------
-
 .. code-block:: console
 
     $ backtest \
@@ -25,11 +21,6 @@ Typical usage
         --currency USD \
         --lookback 750 \
         --out ./bt-usd-2020_2025
-
-The engine assumes each `*.csv` contains end-of-day swap quotes for a single
-date (filename → `YYYY-MM-DD.csv`).  Curve artefacts are **not** cached – every
-date is rebuilt to avoid look-ahead bias; turn on `--cache` for speedier dev
-runs.
 """
 from __future__ import annotations
 
@@ -45,8 +36,7 @@ from tqdm import tqdm
 from gp.tiered_gp import TieredGP
 from ann.residual_net import ResidualANN
 from utils import calibration as ucal
-from utils import data as udata
-from utils import plots as uplt
+from utils import data as udata  # still useful if you later add live feeds
 
 # --------------------------------------------------------------------------- #
 # Argument parser
@@ -57,7 +47,7 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="backtest",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="Historical replay of GP + ANN RV framework.",
+        description="Historical replay of GP + ANN calibration (risk blocks removed).",
     )
 
     p.add_argument(
@@ -94,7 +84,7 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
 
 
 # --------------------------------------------------------------------------- #
-# Main back-tester
+# Main back-tester (signals-only)
 # --------------------------------------------------------------------------- #
 
 
@@ -106,9 +96,9 @@ def main(argv: list[str] | None = None):  # pragma: no cover
     if not files:
         raise FileNotFoundError("No CSV files matched --quotes")
 
-    # Pre-allocate result containers
-    pnl, dv01_hist, notional_hist = [], [], []
-    dates, signal_hist = [], []
+    # Containers
+    dates: list[str] = []
+    signal_hist: list[np.ndarray] = []
 
     # Rolling ANN fit object (refit monthly for realism)
     ann = ResidualANN(hidden_dims=(64, 64), reg=1e-4)
@@ -141,19 +131,10 @@ def main(argv: list[str] | None = None):  # pragma: no cover
             X, y = ucal.residual_dataset(hist_curves)
             ann.fit(X, y, epochs=100, batch_size=128)
 
-        # Current-day alpha
+        # Current-day residual alpha
         alpha = ann.predict(ucal.ann_features(gp)[None, :])[0]  # shape (n_knots,)
         signal_hist.append(alpha)
         dates.append(date)
-
-        # ------------------------------ #
-        # Risk / PnL bookkeeping
-        # ------------------------------ #
-        dv01 = ucal.bucket_dv01(gp)
-        dv01_hist.append(dv01)
-        notional_hist.append(ucal.notional_used(gp, alpha))
-
-        pnl.append(ucal.realised_pnl(gp, alpha))
 
         # Optional cache for debugging
         if args.cache:
@@ -161,23 +142,11 @@ def main(argv: list[str] | None = None):  # pragma: no cover
             (args.out / "curves" / f"{date}.pkl").write_bytes(gp.to_pickle())
 
     # ------------------------------------------------------------------ #
-    # Teardown → aggregate & dump
-    pnl = pd.Series(pnl, index=pd.to_datetime(dates), name="pnl")
-    dv01_hist = pd.DataFrame(dv01_hist, index=pnl.index)
-    signals = pd.DataFrame(signal_hist, index=pnl.index)
-
-    pnl.to_csv(args.out / "pnl.csv")
-    dv01_hist.to_csv(args.out / "dv01_daily.csv")
+    # Aggregate & dump signals
+    signals = pd.DataFrame(signal_hist, index=pd.to_datetime(dates))
     signals.to_csv(args.out / "alpha.csv")
 
-    stats = ucal.performance_tearsheet(pnl)
-    stats.to_csv(args.out / "stats.csv")
-
-    # Fancy charts
-    uplt.pnl_curve(pnl, save_to=args.out / "pnl.png")
-    uplt.signal_heatmap(signals, save_to=args.out / "alpha_heat.png")
-
-    print("✅  Back-test finished:", args.out)
+    print("✅  Back-test finished (signals only):", args.out)
 
 
 # --------------------------------------------------------------------------- #

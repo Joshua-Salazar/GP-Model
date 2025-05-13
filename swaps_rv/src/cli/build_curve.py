@@ -3,36 +3,16 @@
 cli.build_curve
 ===============
 
-Command–line helper that builds a **tiered GP + ANN** relative-value curve
+Command-line helper that builds a **tiered GP + ANN** relative-value curve
 from a simple CSV with market quotes and dumps:
 
 * calibrated discount / IFR grids
 * residual ANN alpha series
-* bucket-DV01, carry/roll tables
 * prettified PNG / PDF plots
 
-Typical usage
--------------
-
-.. code-block:: console
-
-    $ build_curve \
-        --csv usd_swaps_eod_2025-05-09.csv \
-        --currency USD \
-        --ois usd_ois_curve.csv \
-        --out build/2025-05-09
-
-The output folder will contain
-
-* `curve.pkl`      –   pickled :class:`gp.tiered_gp.TieredGP`
-* `alpha.pkl`      –   pickled :class:`ann.residual_net.ResidualANN`
-* `dv01.csv`, `carry_roll.csv`
-* `ifr.png`, `alpha_panel.pdf`, ...
-
-All heavy lifting is delegated to **core library** modules; this file is a
-thin argparse + orchestration wrapper.
-
+Risk analytics (bucket-DV01, carry/roll, tear sheets) have been **removed**.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -75,7 +55,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--out",
         type=pathlib.Path,
-        default=pathlib.Path("build") / datetime.now().strftime("%Y-%m-d"),
+        default=pathlib.Path("build") / datetime.now().strftime("%Y-%m-%d"),
         help="Output folder.",
     )
     p.add_argument(
@@ -105,10 +85,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover
     # ------------------------------------------------------------------ #
     # 1. Load data
     quotes = pd.read_csv(args.csv)
-    if args.ois:
-        ois_quotes = pd.read_csv(args.ois)
-    else:
-        ois_quotes = None
+    ois_quotes = pd.read_csv(args.ois) if args.ois else None
 
     # canonical tier map if none given
     tier_cfg = (
@@ -129,7 +106,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover
         quotes,
         tiers=tier_cfg,
         ois_curve=ois_quotes,
-        kernel="Brownian",  # default
+        kernel="Brownian",        # default
         optimize_prior=True,
         jit=args.jit,
     )
@@ -146,26 +123,15 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover
     ann.fit(X_train, y_train, epochs=200, batch_size=128)
 
     # ------------------------------------------------------------------ #
-    # 4. Risk tables
-    dv01 = ucal.bucket_dv01(gp)
-    carry_roll = ucal.carry_roll(gp)
-
-    # ------------------------------------------------------------------ #
-    # 5. Persist artefacts
+    # 4. Persist artefacts
     (args.out / "curve.pkl").write_bytes(gp.to_pickle())
     (args.out / "alpha.pkl").write_bytes(ann.to_pickle())
-    dv01.to_csv(args.out / "dv01.csv", index=False)
-    carry_roll.to_csv(args.out / "carry_roll.csv", index=False)
 
     # ------------------------------------------------------------------ #
-    # 6. Diagnostics
+    # 5. Diagnostics
     if args.plot:
         uplt.plot_ifr(gp, save_to=args.out / "ifr.png")
-        uplt.alpha_panel(
-            gp,
-            ann,
-            save_to=args.out / "alpha_panel.pdf",
-        )
+        uplt.alpha_panel(gp, ann, save_to=args.out / "alpha_panel.pdf")
 
     print("✅  Build finished:", args.out)
 
