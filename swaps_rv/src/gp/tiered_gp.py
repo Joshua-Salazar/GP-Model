@@ -1,85 +1,67 @@
 """
-Tiered Gaussian-Process engine à la “frequency‐layer” framework.
+tiered_gp.py
+============
 
-The object builds an *instantaneous-forward* (IFR) curve f(t)
-as
+Multi-layer Gaussian-Process engine (“frequency-layer” framework) for
+instantaneous-forward-rate term-structures.
 
-    f̂(t) =  Σ_{ℓ=0}^{L}  b_ℓ(t)·α_ℓ                     (1)
+A *tier* represents a liquidity layer: the most liquid instruments (e.g. 30 y
+anchor, on-the-run swaps, …) are fitted first, their basis functions are frozen,
+and residual illiquid constraints are calibrated on successive layers.
 
-where every layer ℓ corresponds to a **liquidity tier**
-
-    L0 :  30 y anchor
-    L1 :   2 y, 5 y, 10 y
-    L2 :   1 y, 7 y, 20 y
-    L3 :   3 y, 15 y, 25 y
-    L4 :   rest  (interpolated)
-
-and is calibrated sequentially from the most- to least-liquid
-constraints (par-swap or yield inputs).  Basis functions b_ℓ(t)
-are the *conditional means* of a GP (Brownian motion or OU)
-subject to the constraints at that tier.
-
-Features
---------
-* Brownian / OU prior; automatic posterior mean & covariance.
-* Arbitrary interpolation backend (cubic, tension, …) for **residual**
-  projection inside a tier.
-* Posterior Σₓ – ΛΣᴛΛᵀ retained (optional) for uncertainty bands.
-* Numba-accelerated path sampling & bucket-DV01.
-* Plays nicely with the `ann.residual_net.ResidualNet` to add
-  non-linear/fly corrections.
-
-Notes
------
-This implementation focuses on clarity; heavy linear-algebra pieces
-are in `_core.py` and jit-compiled.  For production you may want to
-specialise the factorisation calls (Cholesky vs QR) to your BLAS.
+The posterior mean is the additive sum of per-tier contributions; the posterior
+covariance (optionally) follows the usual conditional-GP update.
 """
 
 from __future__ import annotations
 
 import numpy as np
 import numpy.linalg as npl
-from dataclasses import dataclass, field
-from typing import Sequence, Literal, Callable, Optional
+from dataclasses import dataclass
+from typing import Callable, Literal, Sequence
 
-from .interpolators import get as get_interp
-from utils.calibration import dv01_bucket              # noqa: F401
-from utils.data import par_swap_to_ifr_constraints     # noqa: F401
-from utils.plots import plot_curve, plot_posterior      # noqa: F401
+# --------------------------------------------------------------------- optional JIT
+try:
+    from numba import njit
+except ModuleNotFoundError:  # pragma: no cover
+    # graceful degradation if Numba is not available
+    def njit(*_args, **_kw):
+        def _decorator(func):
+            return func
 
-# --------------------------------------------------------------------- jit helpers
-from numba import njit, prange
+        return _decorator
 
 
 @njit(cache=True, fastmath=True)
 def _brownian_cov(t: np.ndarray) -> np.ndarray:
     n = t.size
-    Σ = np.empty((n, n))
+    out = np.empty((n, n))
     for i in range(n):
         for j in range(n):
-            Σ[i, j] = min(t[i], t[j])
-    return Σ
+            out[i, j] = min(t[i], t[j])
+    return out
 
 
 @njit(cache=True, fastmath=True)
 def _ou_cov(t: np.ndarray, hl: float) -> np.ndarray:
     lam = np.log(2.0) / hl
     n = t.size
-    Σ = np.empty((n, n))
+    out = np.empty((n, n))
     for i in range(n):
         for j in range(n):
-            Σ[i, j] = 0.5 / lam * np.exp(-lam * abs(t[i] - t[j]))
-    return Σ
+            out[i, j] = 0.5 / lam * np.exp(-lam * abs(t[i] - t[j]))
+    return out
 
 
 # ---------------------------------------------------------------- configuration
-@dataclass
+@dataclass(frozen=True)
 class TierConfig:
-    knots: Sequence[float]
-    constraints: Sequence[int]
-    interp: str = "cubic"
-    sigma: float | Sequence[float] = 0.0
+    """Describe one liquidity layer."""
+
+    knots: Sequence[float]            # knot locations for the interpolator
+    constraints: Sequence[int]        # indices in the input vector
+    interp: str = "cubic"             # registered interpolator name
+    sigma: float | Sequence[float] = 0.0  # tension parameter(s) if relevant
 
 
 USD_TIERS: list[TierConfig] = [
@@ -87,12 +69,29 @@ USD_TIERS: list[TierConfig] = [
     TierConfig(knots=[2.0, 5.0, 10.0], constraints=[0, 1, 2]),
     TierConfig(knots=[1.0, 7.0, 20.0], constraints=[3, 4, 5]),
     TierConfig(knots=[3.0, 15.0, 25.0], constraints=[6, 7, 8]),
-    TierConfig(knots=[], constraints=[]),  # catch-all residual
 ]
 
 
-# ---------------------------------------------------------------- core
+# ---------------------------------------------------------------- GP core
 class TieredGP:
+    """
+    Tiered Gaussian-Process interpolator for IFR curves.
+
+    Parameters
+    ----------
+    times
+        Strictly increasing training grid (years).
+    tiers
+        List of :class:`TierConfig`; defaults to *USD_TIERS*.
+    prior
+        `'BM'` Brownian motion or `'OU'` Ornstein–Uhlenbeck.
+    hl
+        Half-life for the OU prior (ignored if *prior* is `'BM'`).
+    store_posterior
+        If *True* retain Σ\_post for error bands / sampling.
+    """
+
+    # ------------------------------------------------------------------
     def __init__(
         self,
         times: Sequence[float],
@@ -104,60 +103,67 @@ class TieredGP:
     ):
         self.t = np.ascontiguousarray(times, float)
         if np.any(np.diff(self.t) <= 0):
-            raise ValueError("times must be strictly increasing")
-        self.tiers = tiers or USD_TIERS
-        self.prior = prior
-        self.hl = hl
-        self._keep_cov = store_posterior
-        self._Σ_post: Optional[np.ndarray] = None
+            raise ValueError("`times` must be strictly increasing.")
 
+        self.tiers: list[TierConfig] = tiers or USD_TIERS
+        self.prior, self.hl = prior, hl
+        self._keep_cov = store_posterior
+
+        self._Σ_post: np.ndarray | None = None
         self._alpha: list[np.ndarray] = []
         self._basis_funcs: list[Callable[[np.ndarray], np.ndarray]] = []
 
-    # ------------------------------------------------ utilities
+    # ------------------------------------------------------------------ helpers
     def _prior_cov(self) -> np.ndarray:
         return _brownian_cov(self.t) if self.prior == "BM" else _ou_cov(self.t, self.hl)
 
-    # ------------------------------------------------ fitting
+    # ------------------------------------------------------------------ fitting
     def fit(
         self,
         y_mkt: np.ndarray,
+        *,
         design: Callable[[np.ndarray], np.ndarray] | None = None,
-    ):
-        Σ = self._prior_cov()
-        μ = np.zeros_like(self.t)
-        resid = np.copy(y_mkt)
+    ) -> "TieredGP":
+        """
+        Sequentially calibrate the GP to *y_mkt* tier-by-tier.
 
-        if design is None:
-            design = lambda x: x
+        *design* maps implied-IFR contributions (Λ α) into the observable
+        metric (par-swap residuals, yields, etc.).  If *None*, the identity
+        map is used.
+        """
+        y_mkt = np.ascontiguousarray(y_mkt, float)
+        Σ = self._prior_cov()
+        resid = y_mkt.copy()
+
+        design = (lambda x: x) if design is None else design
 
         for tier in self.tiers:
-            # ------------------------- residual tier (no hard constraints)
-            if not tier.constraints:
+            if not tier.constraints:  # purely interpolatory layer
                 interp_cls = get_interp(tier.interp)
-
-                knots = np.asarray(tier.knots, float)
-                if knots.size == 0:           # fallback → full grid
-                    knots = self.t
-
-                zero_ifr = np.zeros_like(knots)
-                spl = interp_cls(knots, zero_ifr, sigma=tier.sigma)
-
-                # basis → simply zeros; residual tier starts at 0
-                self._basis_funcs.append(lambda x: np.zeros_like(x, float))
-                self._alpha.append(np.zeros(1))
+                knots = np.asarray(tier.knots or self.t, float)
+                zeros = np.zeros_like(knots)
+                spl = interp_cls(knots, zeros, sigma=tier.sigma)
+                self._basis_funcs.append(lambda x, s=spl: s(x))
                 continue
-            # ------------------------- constrained tier
-            idx = np.asarray(tier.constraints)
-            Λ = Σ[:, idx]
-            Σy = Σ[np.ix_(idx, idx)]
+
+            # ----------------------------------------------------------------
+            idx = np.asarray(tier.constraints, int)
+            Λ = Σ[:, idx]                 # n × m
+            Σy = Σ[np.ix_(idx, idx)]      # m × m
 
             α = npl.solve(Σy, resid[idx])
-            μ += Λ @ α
-            resid -= design(Λ.T @ α)
+            self._alpha.append(α.copy())
 
-            self._alpha.append(α)
-            self._basis_funcs.append(lambda x, α=α, Λ=Λ: np.interp(x, self.t, Λ @ α))
+            contrib_train = Λ @ α
+            resid -= design(contrib_train)
+
+            # capture the vector once to avoid late binding inside the lambda
+            contrib_train = contrib_train.copy()
+
+            def _bf(x, train_t=self.t, train_contrib=contrib_train):
+                return np.interp(np.asarray(x, float), train_t, train_contrib)
+
+            self._basis_funcs.append(_bf)
 
             if self._keep_cov:
                 Σ -= Λ @ npl.solve(Σy, Λ.T)
@@ -166,7 +172,7 @@ class TieredGP:
             self._Σ_post = Σ
         return self
 
-    # ------------------------------------------- API (predict / cov / sample)
+    # ------------------------------------------------------------------ API
     def predict(self, grid: Sequence[float]) -> np.ndarray:
         g = np.asarray(grid, float)
         out = np.zeros_like(g)
@@ -176,26 +182,46 @@ class TieredGP:
 
     def posterior_cov(self, grid: Sequence[float]) -> np.ndarray:
         if self._Σ_post is None:
-            raise RuntimeError("fit(..., store_posterior=True) required.")
+            raise RuntimeError("Call fit(..., store_posterior=True) first.")
         g = np.asarray(grid, float)
-        return np.interp(g, self.t, self._Σ_post)
+        if g.size == self.t.size and np.allclose(g, self.t):
+            return self._Σ_post
 
-    def bucket_dv01(self, beta: np.ndarray, pvbp: np.ndarray) -> np.ndarray:
-        return dv01_bucket(beta, pvbp)
+        # full kernel recomputation for arbitrary grid
+        K = (
+            _brownian_cov(g)
+            if self.prior == "BM"
+            else _ou_cov(g, self.hl)
+        )
+        # project through the learnt conditioning terms
+        Σ = K.copy()
+        start = 0
+        for tier, α in zip(self.tiers, self._alpha):
+            m = len(tier.constraints)
+            idx = start + np.arange(m)
+            Λg = Σ[:, idx]
+            Σy = Σ[np.ix_(idx, idx)]
+            Σ -= Λg @ npl.solve(Σy, Λg.T)
+            start += m
+        return Σ
 
-    def sample(self, n_path: int = 1, random_state=None) -> np.ndarray:
+    def sample(self, n_path: int = 1, *, random_state=None) -> np.ndarray:
+        """
+        Draw IFR paths from the posterior (grid = training grid).
+        """
         if self._Σ_post is None:
-            raise RuntimeError("Must fit(store_posterior=True) first.")
+            raise RuntimeError("Call fit(..., store_posterior=True) first.")
         rng = np.random.default_rng(random_state)
         L = npl.cholesky(self._Σ_post + 1e-16 * np.eye(len(self.t)))
         z = rng.standard_normal((n_path, len(self.t)))
         return (L @ z.T).T + self.predict(self.t)
 
-    # ------------------------------------------------ plotting helpers
+    # ------------------------------------------------------------------ plot helper
     def plot(self, ax=None, **kw):
-        ax = plot_curve(self.t, self.predict(self.t), ax=ax,
-                        label="Tiered-GP", **kw)
-        if self._Σ_post is not None:
-            plot_posterior(self.t, self.predict(self.t), self._Σ_post, ax=ax)
-        return ax
+        import utils.plots as _p
 
+        fx = self.predict(self.t)
+        ax = _p.plot_curve(self.t, fx, ax=ax, label="Tiered-GP", **kw)
+        if self._Σ_post is not None:
+            _p.plot_posterior(self.t, fx, self._Σ_post, ax=ax)
+        return ax
