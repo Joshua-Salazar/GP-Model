@@ -173,3 +173,6 @@ class TensionSpline:
         m = len(grid)
         J = coo_matrix((data, (rows, cols)), shape=(m, n_beta)).tocsr()
         return J
+# ---------------------------------------------------------------------------
+# public alias expected by the registry
+Interpolator = TensionSpline          # <── ADD THIS

@@ -98,3 +98,5 @@ class LinearFwd:
 
 def factory(*args, **kwargs):
     return LinearFwd(*args, **kwargs)
+# good ────────────────────────────────────────────────
+Interpolator = LinearFwd

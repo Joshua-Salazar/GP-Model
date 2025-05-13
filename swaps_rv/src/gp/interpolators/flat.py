@@ -115,3 +115,8 @@ class FlatForward:
 def factory(*args, **kwargs):
     """Entry-point required by the registry (`get("flat")`)."""
     return FlatForward(*args, **kwargs)
+
+# ---------------------------------------------------------------------------
+# public alias expected by the registry
+Interpolator = FlatForward
+

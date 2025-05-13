@@ -197,3 +197,8 @@ class CubicFwd:
 
 def factory(*args, **kwargs):
     return CubicFwd(*args, **kwargs)
+
+# ---------------------------------------------------------------------------
+# public alias expected by the registry
+Interpolator=CubicFwd
+
