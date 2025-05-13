@@ -44,9 +44,9 @@ from dataclasses import dataclass, field
 from typing import Sequence, Literal, Callable, Optional
 
 from .interpolators import get as get_interp
-#from utils.calibration import dv01_bucket              # noqa: F401
-#from utils.data import par_swap_to_ifr_constraints     # noqa: F401
-#from utils.plots import plot_curve, plot_posterior      # noqa: F401
+from utils.calibration import dv01_bucket              # noqa: F401
+from utils.data import par_swap_to_ifr_constraints     # noqa: F401
+from utils.plots import plot_curve, plot_posterior      # noqa: F401
 
 # --------------------------------------------------------------------- jit helpers
 from numba import njit, prange
