@@ -1,143 +1,141 @@
 #!/usr/bin/env python3
 """
-cli.backtest (risk-stripped)
-============================
+cli.backtest (risk‑stripped)
+===========================
 
-Light-weight event-loop that **replays a historical data folder** through the
-GP + ANN stack and records the daily residual-alpha signal – nothing else.
+Replay a folder of end‑of‑day swap quote CSVs through **TieredGP → ANN** and
+store the daily *alpha* signal (the ANN‑predicted residual at the knot grid).
 
-Removed functionality
----------------------
-* bucket-DV01, carry/roll, notional usage
-* realised PnL & performance tear-sheet
-* all DV01 / PnL plots
+Removed functionality (compared with the original repo)
+------------------------------------------------------
+* No DV01 / carry‑roll, notional, or PnL calculations
+* No tear‑sheet; only the alpha time‑series gets written
 """
 from __future__ import annotations
 
 import argparse
 import pathlib
+import pickle
 import sys
-import pickle                         # ➜ needed for on-disk caching
 from datetime import datetime
+from typing import List
 
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
 from gp.tiered_gp import TieredGP
-from ann.residual_net import ResidualNet       # ➜ class is called ResidualNet
+from ann.residual_net import ResidualNet, ResidualNetConfig  # new API
 from utils import calibration as ucal
-from utils import data as udata   # still handy if you later add live feeds
-
+from utils import data as udata  # (unused for now, kept for future live‑feed work)
 
 # --------------------------------------------------------------------------- #
-# Argument parser
+# CLI helpers
 # --------------------------------------------------------------------------- #
-def _parse(argv: list[str] | None) -> argparse.Namespace:
+
+def _parse(argv: List[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="backtest",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="Historical replay of GP + ANN calibration (risk blocks removed).",
     )
 
-    p.add_argument(
-        "--quotes",
-        required=True,
-        nargs="+",
-        help="Glob to EOD quote CSV files (one date per file).",
-    )
+    p.add_argument("quotes", nargs="+", help="Glob of EOD CSV files – one per date.")
     p.add_argument(
         "--currency",
         required=True,
         choices=["USD", "EUR", "GBP", "JPY"],
-        help="Market currency (holidays, calendars).",
+        help="Market currency (holiday calendar).",
     )
-    p.add_argument(
-        "--lookback",
-        type=int,
-        default=750,
-        help="Days of history to feed residual-ANN (≈3y EOD).",
-    )
+    p.add_argument("--lookback", type=int, default=750, help="Days to feed the ANN (≈3y).")
     p.add_argument(
         "--out",
         type=pathlib.Path,
         default=pathlib.Path("bt") / datetime.now().strftime("%Y-%m-%d_%H%M"),
         help="Output folder.",
     )
-    p.add_argument(
-        "--cache",
-        action="store_true",
-        help="Cache daily curve artefacts for speed (unsafe for prod).",
-    )
-    p.add_argument("--jit", action="store_true", help="Enable Numba JIT.")
+    p.add_argument("--cache", action="store_true", help="Cache per‑day GP pickles for debug.")
+    p.add_argument("--jit", action="store_true", help="Enable Numba JIT in TieredGP.")
+
     return p.parse_args(argv)
 
 
 # --------------------------------------------------------------------------- #
-# Main back-tester (signals-only)
+# Back‑test driver (signals only)
 # --------------------------------------------------------------------------- #
-def main(argv: list[str] | None = None):  # pragma: no cover
+
+def main(argv: List[str] | None = None):  # pragma: no cover
     args = _parse(argv)
     args.out.mkdir(parents=True, exist_ok=True)
 
     files = sorted(pathlib.Path(f).expanduser() for f in args.quotes)
     if not files:
-        raise FileNotFoundError("No CSV files matched --quotes")
+        raise FileNotFoundError("No CSV files matched the --quotes pattern.")
 
-    # Containers
     dates: list[str] = []
     signal_hist: list[np.ndarray] = []
-
-    # Rolling ANN fit object (refit monthly for realism)
-    ann = ResidualNet(hidden_dims=(64, 64), reg=1e-4)
-
-    # Rolling window buffer of past curves
     hist_curves: list[TieredGP] = []
 
-    for f in tqdm(files, desc="↻ back-testing", unit="day"):
-        date = pathlib.Path(f).stem  # expects YYYY-MM-DD in filename stem
-        quotes = pd.read_csv(f)
+    ann: ResidualNet | None = None  # will be initialised after first curve
 
-        gp = TieredGP(
-            quotes,
-            kernel="Brownian",
-            tiers=None,          # default canonical tiers inside the class
-            optimize_prior=False,
-            jit=args.jit,
-        )
-        gp.calibrate()
+    for f in tqdm(files, desc="↻ back‑testing", unit="day"):
+        date_str = f.stem  # expects YYYY‑MM‑DD in filename
+        df_quotes = pd.read_csv(f)
 
-        # ------------------------------ #
-        # ANN fit / update
-        # ------------------------------ #
+        # ------------------------------------------------------------------
+        # 1. Build GP curve for the day (placeholder fit – user should adapt
+        #    to their quote format and design matrix).
+        # ------------------------------------------------------------------
+        times = df_quotes["tenor"].values.astype(float)
+        market_ifr = df_quotes["ifr"].values.astype(float)
+
+        gp = TieredGP(times, store_posterior=False, prior="BM", hl=5.0)
+        gp.fit(market_ifr)  # identity design‑matrix assumption
+
+        # ------------------------------------------------------------------
+        # 2. Maintain rolling history & (re)fit ANN
+        # ------------------------------------------------------------------
         hist_curves.append(gp)
         if len(hist_curves) > args.lookback:
             hist_curves.pop(0)
 
-        # Re-train ANN once per 20 business days
-        if len(hist_curves) % 20 == 0:
+        # Initialise ANN once we know input / output dims
+        if ann is None and len(hist_curves) >= 5:  # wait for a few curves
+            X0, y0 = ucal.residual_dataset(hist_curves)
+            cfg = ResidualNetConfig(in_dim=X0.shape[1], out_dim=y0.shape[1])
+            ann = ResidualNet(cfg)
+            ann.fit(X0, y0, epochs=300, batch_size=128)
+
+        # Monthly refit (every 20 business days)
+        if ann is not None and len(hist_curves) % 20 == 0:
             X, y = ucal.residual_dataset(hist_curves)
-            ann.fit(X, y, epochs=100, batch_size=128)
+            ann.fit(X, y, epochs=200, batch_size=128)
 
-        # Current-day residual alpha
-        alpha = ann.predict(ucal.ann_features(gp)[None, :])[0]  # shape (n_knots,)
-        signal_hist.append(alpha)
-        dates.append(date)
+        # ------------------------------------------------------------------
+        # 3. Generate alpha signal for today
+        # ------------------------------------------------------------------
+        if ann is not None:
+            x_today = ucal.ann_features(gp)[None, :]
+            alpha = ann(x_today)[0]  # type: ignore[index]
+            signal_hist.append(alpha)
+        else:
+            signal_hist.append(np.full(gp.knots.shape, np.nan))
 
-        # Optional cache for debugging
+        dates.append(date_str)
+
+        # Optional caching of the curve object
         if args.cache:
             curve_dir = args.out / "curves"
             curve_dir.mkdir(exist_ok=True)
-            (curve_dir / f"{date}.pkl").write_bytes(pickle.dumps(gp))  # ➜ use stdlib pickle
+            (curve_dir / f"{date_str}.pkl").write_bytes(pickle.dumps(gp))
 
-    # ------------------------------------------------------------------ #
-    # Aggregate & dump signals
+    # ------------------------------------------------------------------
+    # Dump alpha panel
+    # ------------------------------------------------------------------
     signals = pd.DataFrame(signal_hist, index=pd.to_datetime(dates))
     signals.to_csv(args.out / "alpha.csv")
+    print("✅  Back‑test finished – alpha saved to:", args.out / "alpha.csv")
 
-    print("✅  Back-test finished (signals only):", args.out)
 
-
-# --------------------------------------------------------------------------- #
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(main())

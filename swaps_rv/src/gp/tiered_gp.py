@@ -2,34 +2,46 @@
 tiered_gp.py
 ============
 
-Multi-layer Gaussian-Process engine (“frequency-layer” framework) for
-instantaneous-forward-rate term-structures.
+Multi-layer Gaussian‑Process engine ("frequency‑layer" framework) for
+instantaneous‑forward‑rate term‑structures.
 
-A *tier* represents a liquidity layer: the most liquid instruments (e.g. 30 y
-anchor, on-the-run swaps, …) are fitted first, their basis functions are frozen,
+A *tier* represents a liquidity layer: the most‑liquid instruments (e.g. 30 y
+anchor, on‑the‑run swaps, …) are fitted first, their basis functions are frozen,
 and residual illiquid constraints are calibrated on successive layers.
 
-The posterior mean is the additive sum of per-tier contributions; the posterior
-covariance (optionally) follows the usual conditional-GP update.
+The posterior mean is the additive sum of per‑tier contributions; the posterior
+covariance (optionally) follows the usual conditional‑GP update.
 """
 
 from __future__ import annotations
 
-import numpy as np
-import numpy.linalg as npl
+import datetime as _dt
 from dataclasses import dataclass
 from typing import Callable, Literal, Sequence
 
+import numpy as np
+import numpy.linalg as npl
+
 # --------------------------------------------------------------------- optional JIT
 try:
-    from numba import njit
-except ModuleNotFoundError:  # pragma: no cover
-    # graceful degradation if Numba is not available
-    def njit(*_args, **_kw):
+    from numba import njit  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover – run without numba
+
+    def njit(*_args, **_kw):  # type: ignore
         def _decorator(func):
             return func
 
         return _decorator
+
+# --------------------------------------------------------------------- local imports
+# (imported lazily earlier – bring to top for clarity)
+from gp.interpolators import get as get_interp  # registry helper
+
+__all__ = [
+    "TieredGP",
+    "TierConfig",
+    "USD_TIERS",
+]
 
 
 @njit(cache=True, fastmath=True)
@@ -58,9 +70,9 @@ def _ou_cov(t: np.ndarray, hl: float) -> np.ndarray:
 class TierConfig:
     """Describe one liquidity layer."""
 
-    knots: Sequence[float]            # knot locations for the interpolator
-    constraints: Sequence[int]        # indices in the input vector
-    interp: str = "cubic"             # registered interpolator name
+    knots: Sequence[float]  # knot locations for the interpolator
+    constraints: Sequence[int]  # indices in the input vector
+    interp: str = "cubic"  # registered interpolator name
     sigma: float | Sequence[float] = 0.0  # tension parameter(s) if relevant
 
 
@@ -74,22 +86,7 @@ USD_TIERS: list[TierConfig] = [
 
 # ---------------------------------------------------------------- GP core
 class TieredGP:
-    """
-    Tiered Gaussian-Process interpolator for IFR curves.
-
-    Parameters
-    ----------
-    times
-        Strictly increasing training grid (years).
-    tiers
-        List of :class:`TierConfig`; defaults to *USD_TIERS*.
-    prior
-        `'BM'` Brownian motion or `'OU'` Ornstein–Uhlenbeck.
-    hl
-        Half-life for the OU prior (ignored if *prior* is `'BM'`).
-    store_posterior
-        If *True* retain Σ\_post for error bands / sampling.
-    """
+    """Tiered Gaussian‑Process interpolator for IFR curves."""
 
     # ------------------------------------------------------------------
     def __init__(
@@ -100,6 +97,7 @@ class TieredGP:
         prior: Literal["BM", "OU"] = "BM",
         hl: float = 5.0,
         store_posterior: bool = False,
+        value_date: _dt.date | None = None,
     ):
         self.t = np.ascontiguousarray(times, float)
         if np.any(np.diff(self.t) <= 0):
@@ -108,10 +106,15 @@ class TieredGP:
         self.tiers: list[TierConfig] = tiers or USD_TIERS
         self.prior, self.hl = prior, hl
         self._keep_cov = store_posterior
+        self.value_date: _dt.date | None = value_date  # external assignment allowed
 
-        self._Σ_post: np.ndarray | None = None
-        self._alpha: list[np.ndarray] = []
+        self._Σ_post: np.ndarray | None = None  # posterior cov (if kept)
+        self._alpha: list[np.ndarray] = []  # per‑tier weights
         self._basis_funcs: list[Callable[[np.ndarray], np.ndarray]] = []
+
+        # placeholders filled by `.fit()`
+        self._y_mkt: np.ndarray | None = None
+        self._residual: np.ndarray | None = None
 
     # ------------------------------------------------------------------ helpers
     def _prior_cov(self) -> np.ndarray:
@@ -124,21 +127,19 @@ class TieredGP:
         *,
         design: Callable[[np.ndarray], np.ndarray] | None = None,
     ) -> "TieredGP":
-        """
-        Sequentially calibrate the GP to *y_mkt* tier-by-tier.
-
-        *design* maps implied-IFR contributions (Λ α) into the observable
-        metric (par-swap residuals, yields, etc.).  If *None*, the identity
-        map is used.
-        """
+        """Sequentially calibrate the GP to *y_mkt* tier‑by‑tier."""
         y_mkt = np.ascontiguousarray(y_mkt, float)
         Σ = self._prior_cov()
         resid = y_mkt.copy()
 
         design = (lambda x: x) if design is None else design
 
+        self._basis_funcs.clear()
+        self._alpha.clear()
+
         for tier in self.tiers:
-            if not tier.constraints:  # purely interpolatory layer
+            # purely interpolatory layer -----------------------------------
+            if not tier.constraints:
                 interp_cls = get_interp(tier.interp)
                 knots = np.asarray(tier.knots or self.t, float)
                 zeros = np.zeros_like(knots)
@@ -146,10 +147,10 @@ class TieredGP:
                 self._basis_funcs.append(lambda x, s=spl: s(x))
                 continue
 
-            # ----------------------------------------------------------------
+            # --------------------------------------------------------------
             idx = np.asarray(tier.constraints, int)
-            Λ = Σ[:, idx]                 # n × m
-            Σy = Σ[np.ix_(idx, idx)]      # m × m
+            Λ = Σ[:, idx]  # n × m
+            Σy = Σ[np.ix_(idx, idx)]  # m × m
 
             α = npl.solve(Σy, resid[idx])
             self._alpha.append(α.copy())
@@ -157,23 +158,68 @@ class TieredGP:
             contrib_train = Λ @ α
             resid -= design(contrib_train)
 
-            # capture the vector once to avoid late binding inside the lambda
+            # capture current values for closure
             contrib_train = contrib_train.copy()
+            train_t = self.t.copy()
 
-            def _bf(x, train_t=self.t, train_contrib=contrib_train):
-                return np.interp(np.asarray(x, float), train_t, train_contrib)
+            def _bf(x, _t=train_t, _c=contrib_train):
+                return np.interp(np.asarray(x, float), _t, _c)
 
             self._basis_funcs.append(_bf)
 
             if self._keep_cov:
                 Σ -= Λ @ npl.solve(Σy, Λ.T)
 
+        # store bookkeeping
+        self._y_mkt = y_mkt
+        self._residual = resid
         if self._keep_cov:
             self._Σ_post = Σ
         return self
 
-    # ------------------------------------------------------------------ API
-    def predict(self, grid: Sequence[float]) -> np.ndarray:
+    # ------------------------------------------------------------------ API accessors (added for utils)
+    # These thin wrappers provide the attributes expected by utils.plots & calibration.
+
+    # geometry
+    @property
+    def knots(self) -> np.ndarray:
+        """Return training‑grid times (alias for *t*)."""
+        return self.t
+
+    # core prediction helpers
+    def ifr(self, x: Sequence[float] | float) -> np.ndarray:
+        """Instantaneous forward rate at *x* (vectorised)."""
+        return self.predict(x)
+
+    # liquidity masks (based on whether a tier has constraints)
+    def liquid_knots(self) -> np.ndarray:
+        idx = []
+        for tier in self.tiers:
+            if tier.constraints:
+                idx.extend(tier.constraints)
+        return self.t[np.asarray(sorted(set(idx)), int)] if idx else np.asarray([], float)
+
+    def illiquid_knots(self) -> np.ndarray:
+        liq = set(self.liquid_knots())
+        return self.t[[i for i, x in enumerate(self.t) if x not in liq]]
+
+    # simple par‑swap placeholder (should be replaced with proper pricing)
+    def par_swap_rates(self) -> np.ndarray:
+        """Mock par‑swap rates = IFR at knot locations (placeholder)."""
+        return self.ifr(self.knots)
+
+    def residual(self) -> np.ndarray:
+        if self._residual is None:
+            raise RuntimeError("Call fit(...) first to populate residuals.")
+        return self._residual
+
+    def posterior_var_scalar(self) -> float:
+        if self._Σ_post is None:
+            raise RuntimeError("Run fit(..., store_posterior=True) to keep Σ_post.")
+        return float(np.mean(np.diag(self._Σ_post)))
+
+    # ------------------------------------------------------------------ prediction / sampling
+    def predict(self, grid: Sequence[float] | float) -> np.ndarray:
         g = np.asarray(grid, float)
         out = np.zeros_like(g)
         for bf in self._basis_funcs:
@@ -187,13 +233,8 @@ class TieredGP:
         if g.size == self.t.size and np.allclose(g, self.t):
             return self._Σ_post
 
-        # full kernel recomputation for arbitrary grid
-        K = (
-            _brownian_cov(g)
-            if self.prior == "BM"
-            else _ou_cov(g, self.hl)
-        )
-        # project through the learnt conditioning terms
+        # full kernel recomputation for arbitrary grid --------------------
+        K = _brownian_cov(g) if self.prior == "BM" else _ou_cov(g, self.hl)
         Σ = K.copy()
         start = 0
         for tier, α in zip(self.tiers, self._alpha):
@@ -206,9 +247,7 @@ class TieredGP:
         return Σ
 
     def sample(self, n_path: int = 1, *, random_state=None) -> np.ndarray:
-        """
-        Draw IFR paths from the posterior (grid = training grid).
-        """
+        """Draw IFR paths from the posterior (grid = training grid)."""
         if self._Σ_post is None:
             raise RuntimeError("Call fit(..., store_posterior=True) first.")
         rng = np.random.default_rng(random_state)
@@ -216,12 +255,17 @@ class TieredGP:
         z = rng.standard_normal((n_path, len(self.t)))
         return (L @ z.T).T + self.predict(self.t)
 
-    # ------------------------------------------------------------------ plot helper
+    # ------------------------------------------------------------------ plot helper (compat with new utils.plots API)
     def plot(self, ax=None, **kw):
-        import utils.plots as _p
+        """Quick visual – wraps ``utils.plots.curve``."""
+        import utils.plots as _p  # local import to avoid cycles
 
-        fx = self.predict(self.t)
-        ax = _p.plot_curve(self.t, fx, ax=ax, label="Tiered-GP", **kw)
-        if self._Σ_post is not None:
-            _p.plot_posterior(self.t, fx, self._Σ_post, ax=ax)
-        return ax
+        fig = _p.curve(self, ax=ax, **kw)
+        return fig
+
+    # ------------------------------------------------------------------ convenience persistence helpers
+    def to_pickle(self) -> bytes:  # for backward‑compat with old CLI code
+        import pickle
+
+        return pickle.dumps(self)
+

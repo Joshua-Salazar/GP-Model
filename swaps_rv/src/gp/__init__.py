@@ -1,5 +1,5 @@
 """
-Gaussian-process backbone for the relative-value framework.
+Gaussian‑process backbone for the relative‑value framework.
 
 Public interface
 ----------------
@@ -13,40 +13,36 @@ Public interface
 from typing import Any, Callable
 
 # ---------------------------------------------------------------------------
-# Public re-exports
+# Public re‑exports
 # ---------------------------------------------------------------------------
 
 # kernels -------------------------------------------------------------------
-from . import kernels as kernels  # noqa: F401 – re-export
+from . import kernels as kernels  # noqa: F401 – re‑export
 
 # interpolators -------------------------------------------------------------
-from .interpolators import get as _get_interp  # noqa: F401 – re-export
+from .interpolators import get as _get_interp  # noqa: F401 – re‑export
 
 # ---------------------------------------------------------------------------
 # Tiered GP façade
 # ---------------------------------------------------------------------------
-# `tiered_gp.py` defines `TieredGP`; we expose both a modern handle
-# (`TieredGPModel`) and the legacy alias (`TieredGP`).
+# ``tiered_gp.py`` defines ``TieredGP``.  We expose it under two names so that
+# old code continues to work while new code follows the updated terminology.
 
 from .tiered_gp import TieredGP as _TieredGP
 
+# preferred handle ----------------------------------------------------------
+TieredGPModel = _TieredGP  # type: ignore[misc]
 
-class TieredGPModel(_TieredGP):  # type: ignore[misc]
-    """Canonical façade for the tiered Gaussian-process curve."""
-    # No extra logic; subclass purely for naming consistency.
-    pass
-
-
-# Backward-compat shim ------------------------------------------------------
-TieredGP = _TieredGP  # noqa: N816 – preserve original camel-caps symbol
+# legacy alias --------------------------------------------------------------
+TieredGP = _TieredGP  # noqa: N816  – preserve original camel‑caps symbol
 
 # ---------------------------------------------------------------------------
 # Convenience wrapper
 # ---------------------------------------------------------------------------
 
-
 def interpolators(name: str) -> Callable[..., Any]:
     """Shortcut so callers can do ``gp.interpolators("cubic")``."""
+
     return _get_interp(name)
 
 
@@ -55,8 +51,8 @@ def interpolators(name: str) -> Callable[..., Any]:
 # ---------------------------------------------------------------------------
 
 __all__ = [
-    "TieredGPModel",  # new preferred handle
-    "TieredGP",       # deprecated alias
+    "TieredGPModel",
+    "TieredGP",
     "kernels",
     "interpolators",
 ]
