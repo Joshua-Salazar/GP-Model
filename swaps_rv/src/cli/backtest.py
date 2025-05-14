@@ -11,22 +11,13 @@ Removed functionality
 * bucket-DV01, carry/roll, notional usage
 * realised PnL & performance tear-sheet
 * all DV01 / PnL plots
-
-Typical usage
--------------
-.. code-block:: console
-
-    $ backtest \
-        --quotes ./data/eod/*.csv \
-        --currency USD \
-        --lookback 750 \
-        --out ./bt-usd-2020_2025
 """
 from __future__ import annotations
 
 import argparse
 import pathlib
 import sys
+import pickle                         # ➜ needed for on-disk caching
 from datetime import datetime
 
 import numpy as np
@@ -34,15 +25,14 @@ import pandas as pd
 from tqdm import tqdm
 
 from gp.tiered_gp import TieredGP
-from ann.residual_net import ResidualANN
+from ann.residual_net import ResidualNet       # ➜ class is called ResidualNet
 from utils import calibration as ucal
-from utils import data as udata  # still useful if you later add live feeds
+from utils import data as udata   # still handy if you later add live feeds
+
 
 # --------------------------------------------------------------------------- #
 # Argument parser
 # --------------------------------------------------------------------------- #
-
-
 def _parse(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="backtest",
@@ -86,8 +76,6 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
 # --------------------------------------------------------------------------- #
 # Main back-tester (signals-only)
 # --------------------------------------------------------------------------- #
-
-
 def main(argv: list[str] | None = None):  # pragma: no cover
     args = _parse(argv)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -101,19 +89,19 @@ def main(argv: list[str] | None = None):  # pragma: no cover
     signal_hist: list[np.ndarray] = []
 
     # Rolling ANN fit object (refit monthly for realism)
-    ann = ResidualANN(hidden_dims=(64, 64), reg=1e-4)
+    ann = ResidualNet(hidden_dims=(64, 64), reg=1e-4)
 
     # Rolling window buffer of past curves
     hist_curves: list[TieredGP] = []
 
     for f in tqdm(files, desc="↻ back-testing", unit="day"):
-        date = pathlib.Path(f).stem  # expects YYYY-MM-DD
+        date = pathlib.Path(f).stem  # expects YYYY-MM-DD in filename stem
         quotes = pd.read_csv(f)
 
         gp = TieredGP(
             quotes,
             kernel="Brownian",
-            tiers=None,  # default canonical
+            tiers=None,          # default canonical tiers inside the class
             optimize_prior=False,
             jit=args.jit,
         )
@@ -138,8 +126,9 @@ def main(argv: list[str] | None = None):  # pragma: no cover
 
         # Optional cache for debugging
         if args.cache:
-            (args.out / "curves").mkdir(exist_ok=True)
-            (args.out / "curves" / f"{date}.pkl").write_bytes(gp.to_pickle())
+            curve_dir = args.out / "curves"
+            curve_dir.mkdir(exist_ok=True)
+            (curve_dir / f"{date}.pkl").write_bytes(pickle.dumps(gp))  # ➜ use stdlib pickle
 
     # ------------------------------------------------------------------ #
     # Aggregate & dump signals

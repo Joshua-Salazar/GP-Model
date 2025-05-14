@@ -7,10 +7,10 @@ Command-line helper that builds a **tiered GP + ANN** relative-value curve
 from a simple CSV with market quotes and dumps:
 
 * calibrated discount / IFR grids
-* residual ANN alpha series
+* residual-ANN alpha series
 * prettified PNG / PDF plots
 
-Risk analytics (bucket-DV01, carry/roll, tear sheets) have been **removed**.
+Risk analytics (DV01, carry/roll, tear sheets) have been **removed**.
 """
 
 from __future__ import annotations
@@ -18,13 +18,14 @@ from __future__ import annotations
 import argparse
 import pathlib
 import sys
+import pickle
 from datetime import datetime
 
-import numpy as np
+import numpy as np  # noqa: F401  (kept for future extensions)
 import pandas as pd
 
 from gp.tiered_gp import TieredGP
-from ann.residual_net import ResidualANN
+from ann.residual_net import ResidualNet          # ← unified class name
 from utils import data as udata
 from utils import calibration as ucal
 from utils import plots as uplt
@@ -47,7 +48,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=["USD", "EUR", "GBP", "JPY"],
         help="Quote currency – drives calendar/holidays.",
     )
-    p.add_argument("--ois", help="Optional OIS discount curve bootstrap CSV.")
+    p.add_argument("--ois", help="Optional OIS discount-curve bootstrap CSV.")
     p.add_argument(
         "--tiers",
         help="YAML/JSON defining liquidity tiers; default = canonical USD tiers.",
@@ -79,7 +80,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 # --------------------------------------------------------------------------- #
 def main(argv: list[str] | None = None) -> None:  # pragma: no cover
     args = _parse_args(argv)
-
     args.out.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------ #
@@ -114,24 +114,25 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover
 
     # ------------------------------------------------------------------ #
     # 3. Residual ANN
-    ann = ResidualANN(
+    ann = ResidualNet(
         hidden_dims=(64, 64),
         reg=1e-4,
         device="cpu",
     )
-    X_train, y_train = ucal.residual_dataset(gp, hist_days=750)
+    # residual_dataset expects an iterable of curves → wrap gp in a list
+    X_train, y_train = ucal.residual_dataset([gp], hist_days=750)
     ann.fit(X_train, y_train, epochs=200, batch_size=128)
 
     # ------------------------------------------------------------------ #
     # 4. Persist artefacts
-    (args.out / "curve.pkl").write_bytes(gp.to_pickle())
-    (args.out / "alpha.pkl").write_bytes(ann.to_pickle())
+    (args.out / "curve.pkl").write_bytes(pickle.dumps(gp))
+    (args.out / "alpha.pkl").write_bytes(pickle.dumps(ann))
 
     # ------------------------------------------------------------------ #
     # 5. Diagnostics
     if args.plot:
-        uplt.plot_ifr(gp, save_to=args.out / "ifr.png")
-        uplt.alpha_panel(gp, ann, save_to=args.out / "alpha_panel.pdf")
+        uplt.curve(gp, save_to=args.out / "ifr.png")          # IFR curve
+        uplt.ann_surface(ann, save_to=args.out / "ann.png")   # ANN residual map
 
     print("✅  Build finished:", args.out)
 

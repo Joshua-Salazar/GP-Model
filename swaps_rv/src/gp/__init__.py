@@ -4,7 +4,7 @@ Gaussian-process backbone for the relative-value framework.
 Public interface
 ----------------
 * **TieredGPModel** – canonical façade that builds a curve, conditions on
-  liquidity tiers, and produces IFR / DF / DV01 arrays.
+  liquidity tiers, and produces IFR / DF arrays.
 * **TieredGP**      – *deprecated* alias kept for backward compatibility.
 * **kernels.get(name)**
 * **interpolators.get(name)**
@@ -17,29 +17,33 @@ from typing import Any, Callable
 # ---------------------------------------------------------------------------
 
 # kernels -------------------------------------------------------------------
-from . import kernels as kernels  # noqa: F401 re-export
+from . import kernels as kernels  # noqa: F401 – re-export
 
 # interpolators -------------------------------------------------------------
-from .interpolators import get as _get_interp  # noqa: F401
+from .interpolators import get as _get_interp  # noqa: F401 – re-export
 
-# Tiered GP façade ----------------------------------------------------------
-from .tiered_gp import TieredGPModel  # <-- new canonical name
+# ---------------------------------------------------------------------------
+# Tiered GP façade
+# ---------------------------------------------------------------------------
+# `tiered_gp.py` defines `TieredGP`; we expose both a modern handle
+# (`TieredGPModel`) and the legacy alias (`TieredGP`).
 
-# Backward-compat shim ------------------------------------------------------
-class _DeprecatedAlias(TieredGPModel):        # type: ignore[misc]
-    """Alias for code written against the old ``TieredGP`` symbol.
+from .tiered_gp import TieredGP as _TieredGP
 
-    Will be removed in a future major release.
-    """
+
+class TieredGPModel(_TieredGP):  # type: ignore[misc]
+    """Canonical façade for the tiered Gaussian-process curve."""
+    # No extra logic; subclass purely for naming consistency.
     pass
 
 
-TieredGP = _DeprecatedAlias  # noqa: N816  (keep original cap-style)
-
+# Backward-compat shim ------------------------------------------------------
+TieredGP = _TieredGP  # noqa: N816 – preserve original camel-caps symbol
 
 # ---------------------------------------------------------------------------
 # Convenience wrapper
 # ---------------------------------------------------------------------------
+
 
 def interpolators(name: str) -> Callable[..., Any]:
     """Shortcut so callers can do ``gp.interpolators("cubic")``."""
@@ -51,8 +55,8 @@ def interpolators(name: str) -> Callable[..., Any]:
 # ---------------------------------------------------------------------------
 
 __all__ = [
-    "TieredGPModel",   # new preferred handle
-    "TieredGP",        # deprecated alias
+    "TieredGPModel",  # new preferred handle
+    "TieredGP",       # deprecated alias
     "kernels",
     "interpolators",
 ]
