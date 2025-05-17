@@ -48,6 +48,7 @@ def _require_jax():  # noqa: D401 – helper
         )
 
     import haiku as hk  # type: ignore
+
     import jax.numpy as jnp  # type: ignore
     import optax  # type: ignore
 
