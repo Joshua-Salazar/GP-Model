@@ -35,13 +35,13 @@ from typing import Dict
 
 try:  # use JAX if available
     import jax.numpy as np  # type: ignore
-    from jax import lax
 except ModuleNotFoundError:  # fall back to NumPy
     import numpy as np  # type: ignore
 
 ###############################################################################
 # helpers
 ###############################################################################
+
 
 def _as_col(x):
     """Ensure x is an (N,1) column array."""
@@ -63,6 +63,7 @@ def _pairwise_diffs(x, y):
 # kernels
 ###############################################################################
 
+
 def SE(x, y, θ: Dict[str, float]):
     """
     Squared-exponential (RBF) kernel
@@ -74,9 +75,11 @@ def SE(x, y, θ: Dict[str, float]):
     θ : dict
         Must contain keys ``"σ"`` (amplitude) and ``"ℓ"`` (length-scale).
     """
-    σ, ℓ = θ["σ"], θ["ℓ"]
+
+    σ = θ["σ"]
+    ell = θ["ℓ"]
     x, y = _as_col(x), _as_col(y)
-    r = _pairwise_diffs(x / ℓ, y / ℓ)
+    r = _pairwise_diffs(x / ell, y / ell)
     return σ * σ * np.exp(-0.5 * r * r)
 
 
@@ -86,10 +89,12 @@ def Matern52(x, y, θ: Dict[str, float]):
 
         k(r) = σ² * (1 + √5 r/ℓ + 5 r²/(3ℓ²)) * exp(-√5 r/ℓ)
     """
-    σ, ℓ = θ["σ"], θ["ℓ"]
+
+    σ = θ["σ"]
+    ell = θ["ℓ"]
     x, y = _as_col(x), _as_col(y)
-    r = _pairwise_diffs(x, y) / ℓ
-    f = (1.0 + np.sqrt(5.0) * r + 5.0 * r * r / 3.0)
+    r = _pairwise_diffs(x, y) / ell
+    f = 1.0 + np.sqrt(5.0) * r + 5.0 * r * r / 3.0
     return σ * σ * f * np.exp(-np.sqrt(5.0) * r)
 
 
@@ -114,10 +119,12 @@ def OU(x, y, θ: Dict[str, float]):
 
     Equivalent to Matérn-½.
     """
-    σ, ℓ = θ["σ"], θ["ℓ"]
+
+    σ = θ["σ"]
+    ell = θ["ℓ"]
     x, y = _as_col(x), _as_col(y)
     r = _pairwise_diffs(x, y)
-    return σ * σ * np.exp(-r / ℓ)
+    return σ * σ * np.exp(-r / ell)
 
 
 ###############################################################################
