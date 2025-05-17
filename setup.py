@@ -26,14 +26,12 @@ setup(
     author="Your-Desk-Quant-Team",
     license="MIT",
     python_requires=">=3.11",
-
     # ------------------------------------------------------------------
     # Package discovery – src layout
     # ------------------------------------------------------------------
     package_dir={"": "src"},
     packages=find_packages(where="src", exclude=("tests", "notebooks")),
     include_package_data=True,
-
     # ------------------------------------------------------------------
     # Dependencies
     # ------------------------------------------------------------------
@@ -56,7 +54,6 @@ setup(
             "ipython",
         ]
     },
-
     # ------------------------------------------------------------------
     # Trove classifiers
     # ------------------------------------------------------------------
@@ -66,6 +63,5 @@ setup(
         "Intended Audience :: Financial and Insurance Industry",
         "Operating System :: OS Independent",
     ],
-
     zip_safe=False,
 )

@@ -40,6 +40,7 @@ except ModuleNotFoundError:  # noqa: E501 – fall back
 # SciPy is optional – pure-NumPy backup is provided
 try:
     from scipy.interpolate import CubicSpline as _SciCubic  # type: ignore
+
     _HAVE_SCIPY = True
 except ModuleNotFoundError:  # pragma: no cover
     _HAVE_SCIPY = False
@@ -85,8 +86,10 @@ class _TriDiag:
             for i in range(n - 4, -1, -1):
                 M_inner[i] = d[i] - c[i] * M_inner[i + 1]
 
-            M = M.at[1:-1].set(M_inner) if hasattr(M, "at") else _np.insert(
-                M_inner, [0, len(M_inner)], 0.0
+            M = (
+                M.at[1:-1].set(M_inner)
+                if hasattr(M, "at")
+                else _np.insert(M_inner, [0, len(M_inner)], 0.0)
             )
         return M, h
 
@@ -129,7 +132,7 @@ class CubicFwd:
             cs = _SciCubic(self.t, self.f, bc_type="natural", axis=0)
             # SciPy already provides integral
             self._cs = cs
-            self._F = cs.antiderivative()       # ∫ f dt piece-wise
+            self._F = cs.antiderivative()  # ∫ f dt piece-wise
         else:  # “poor-man’s” builder
             M, h = _TriDiag.build(self.t, self.f)
             a, b, c, d = _TriDiag.coeffs(self.t, self.f, M, h)
@@ -140,11 +143,27 @@ class CubicFwd:
             for i in range(len(h)):
                 a_i, b_i, c_i, d_i = a[i], b[i], c[i], d[i]
                 dt = h[i]
-                F = F.at[i + 1].set(
-                    F[i] + a_i * dt + 0.5 * b_i * dt**2 + (1 / 3) * c_i * dt**3 + 0.25 * d_i * dt**4
-                ) if hasattr(F, "at") else _np.concatenate(
-                    (F[: i + 1], [F[i] + a_i * dt + 0.5 * b_i * dt**2 +
-                                  (1 / 3) * c_i * dt**3 + 0.25 * d_i * dt**4])
+                F = (
+                    F.at[i + 1].set(
+                        F[i]
+                        + a_i * dt
+                        + 0.5 * b_i * dt**2
+                        + (1 / 3) * c_i * dt**3
+                        + 0.25 * d_i * dt**4
+                    )
+                    if hasattr(F, "at")
+                    else _np.concatenate(
+                        (
+                            F[: i + 1],
+                            [
+                                F[i]
+                                + a_i * dt
+                                + 0.5 * b_i * dt**2
+                                + (1 / 3) * c_i * dt**3
+                                + 0.25 * d_i * dt**4
+                            ],
+                        )
+                    )
                 )
             self._Fgrid = F
 
@@ -195,10 +214,11 @@ class CubicFwd:
 # Registry hook
 # -------------------------------------------------------------------------
 
+
 def factory(*args, **kwargs):
     return CubicFwd(*args, **kwargs)
 
+
 # ---------------------------------------------------------------------------
 # public alias expected by the registry
-Interpolator=CubicFwd
-
+Interpolator = CubicFwd
