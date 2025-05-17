@@ -23,11 +23,12 @@ from datetime import datetime
 
 import numpy as np  # noqa: F401  (kept for future extensions)
 import pandas as pd
-from ann.residual_net import ResidualNet
-from gp.tiered_gp import TieredGP
-from utils import calibration as ucal
-from utils import data as udata
-from utils import plots as uplt
+
+from swaps_rv.ann.residual_net import ResidualNet
+from swaps_rv.gp.tiered_gp import TieredGP
+from swaps_rv.utils import calibration as ucal
+from swaps_rv.utils import data as udata
+from swaps_rv.utils import plots as uplt
 
 
 # --------------------------------------------------------------------------- #
@@ -84,7 +85,6 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover
     # ------------------------------------------------------------------ #
     # 1. Load data
     quotes = pd.read_csv(args.csv)
-    ois_quotes = pd.read_csv(args.ois) if args.ois else None
 
     # canonical tier map if none given
     tier_cfg = (
@@ -101,15 +101,11 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover
 
     # ------------------------------------------------------------------ #
     # 2. GP calibration
-    gp = TieredGP(
-        quotes,
-        tiers=tier_cfg,
-        ois_curve=ois_quotes,
-        kernel="Brownian",  # default
-        optimize_prior=True,
-        jit=args.jit,
-    )
-    gp.calibrate()
+    times = quotes["tenor"].astype(float).values
+    ifr = quotes["ifr"].astype(float).values
+
+    gp = TieredGP(times, tiers=tier_cfg, store_posterior=False)
+    gp.fit(ifr)
 
     # ------------------------------------------------------------------ #
     # 3. Residual ANN
@@ -119,7 +115,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover
         device="cpu",
     )
     # residual_dataset expects an iterable of curves → wrap gp in a list
-    X_train, y_train = ucal.residual_dataset([gp], hist_days=750)
+    X_train, y_train = ucal.residual_dataset([gp])
     ann.fit(X_train, y_train, epochs=200, batch_size=128)
 
     # ------------------------------------------------------------------ #
