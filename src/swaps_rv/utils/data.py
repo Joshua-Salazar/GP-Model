@@ -31,10 +31,13 @@ import datetime as _dt
 import gzip
 import pickle
 from pathlib import Path
-from typing import List
+from typing import TYPE_CHECKING, List
 
 import pandas as pd
-from gp.tiered_gp import TieredGP
+
+
+if TYPE_CHECKING:  # pragma: no cover
+    from gp.tiered_gp import TieredGP
 
 # --------------------------------------------------------------------------- #
 # Quotes loader

@@ -75,7 +75,9 @@ def SE(x, y, θ: Dict[str, float]):
     θ : dict
         Must contain keys ``"σ"`` (amplitude) and ``"ℓ"`` (length-scale).
     """
-    σ, ell = θ["σ"], θ["ℓ"]
+
+    σ = θ["σ"]
+    ell = θ["ℓ"]
     x, y = _as_col(x), _as_col(y)
     r = _pairwise_diffs(x / ell, y / ell)
     return σ * σ * np.exp(-0.5 * r * r)
@@ -87,7 +89,9 @@ def Matern52(x, y, θ: Dict[str, float]):
 
         k(r) = σ² * (1 + √5 r/ℓ + 5 r²/(3ℓ²)) * exp(-√5 r/ℓ)
     """
-    σ, ell = θ["σ"], θ["ℓ"]
+
+    σ = θ["σ"]
+    ell = θ["ℓ"]
     x, y = _as_col(x), _as_col(y)
     r = _pairwise_diffs(x, y) / ell
     f = 1.0 + np.sqrt(5.0) * r + 5.0 * r * r / 3.0
@@ -115,7 +119,9 @@ def OU(x, y, θ: Dict[str, float]):
 
     Equivalent to Matérn-½.
     """
-    σ, ell = θ["σ"], θ["ℓ"]
+
+    σ = θ["σ"]
+    ell = θ["ℓ"]
     x, y = _as_col(x), _as_col(y)
     r = _pairwise_diffs(x, y)
     return σ * σ * np.exp(-r / ell)

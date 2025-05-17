@@ -22,11 +22,11 @@ from typing import List
 
 import numpy as np
 import pandas as pd
-from ann.residual_net import ResidualNet, ResidualNetConfig
+
+from ann.residual_net import ResidualNet, ResidualNetConfig  # new API
 from gp.tiered_gp import TieredGP
 from tqdm import tqdm
 from utils import calibration as ucal
-from utils import data as udata  # noqa: F401 – reserved for future live-feed work
 
 # --------------------------------------------------------------------------- #
 # CLI helpers
