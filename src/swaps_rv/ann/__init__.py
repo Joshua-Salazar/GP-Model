@@ -24,16 +24,15 @@ Notes
 from pathlib import Path
 from typing import Dict
 
-import jax
-import jax.numpy as jnp
 import haiku as hk
+import jax.numpy as jnp
 
 from .residual_net import ResidualNet
-
 
 # ---------------------------------------------------------------------------
 # Factory helpers
 # ---------------------------------------------------------------------------
+
 
 def get_resnet(cfg: Dict) -> hk.Transformed:
     """
@@ -56,6 +55,7 @@ def get_resnet(cfg: Dict) -> hk.Transformed:
     haiku.Transformed
         Haiku pair with .init(rng, x) and .apply(params, rng, x) call-signatures.
     """
+
     def _forward(x, is_training: bool = False):
         net = ResidualNet(**cfg)
         return net(x, is_training=is_training)

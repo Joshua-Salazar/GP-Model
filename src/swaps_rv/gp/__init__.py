@@ -16,12 +16,17 @@ from typing import Any, Callable
 # ---------------------------------------------------------------------------
 # Public re-exports
 # ---------------------------------------------------------------------------
-
 # kernels -------------------------------------------------------------------
 from . import kernels as kernels  # noqa: F401 – re-export
 
 # interpolators -------------------------------------------------------------
 from .interpolators import get as _get_interp  # noqa: F401 – re-export
+from .tiered_gp import (
+    USD_TIERS as _USD_TIERS,
+)
+from .tiered_gp import (
+    TierConfig as _TierConfig,
+)
 
 # ---------------------------------------------------------------------------
 # Tiered GP façade
@@ -29,11 +34,8 @@ from .interpolators import get as _get_interp  # noqa: F401 – re-export
 # ``tiered_gp.py`` defines ``TieredGP`` (curve engine) and the tier helpers.
 # We expose them at the package level so that users can simply write
 #     from swaps_rv.gp import TieredGP, TierConfig, USD_TIERS
-
 from .tiered_gp import (  # noqa: E402  – keep grouped import
     TieredGP as _TieredGP,
-    TierConfig as _TierConfig,
-    USD_TIERS as _USD_TIERS,
 )
 
 # preferred handle ----------------------------------------------------------

@@ -19,7 +19,7 @@ import importlib
 import pickle
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Sequence
 
 __all__ = [
     "ResidualNetConfig",
@@ -32,9 +32,14 @@ __all__ = [
 # Optional‑dependency guard
 # ---------------------------------------------------------------------------
 
+
 def _require_jax():  # noqa: D401 – helper
     """Import (haiku, jax.numpy, optax) or raise an informative error."""
-    missing = [lib for lib in ("jax", "haiku", "optax") if importlib.util.find_spec(lib) is None]
+    missing = [
+        lib
+        for lib in ("jax", "haiku", "optax")
+        if importlib.util.find_spec(lib) is None
+    ]
     if missing:
         raise ImportError(
             "Residual‑net requires the JAX stack; missing: "
@@ -42,10 +47,9 @@ def _require_jax():  # noqa: D401 – helper
             + ".  Run  `pip install swaps-rv[jax]`  to add the extras."
         )
 
-    import jax  # type: ignore  # noqa: WPS433 – late import intentional
-    import jax.numpy as jnp  # type: ignore  # noqa: WPS433
-    import haiku as hk  # type: ignore  # noqa: WPS433
-    import optax  # type: ignore  # noqa: WPS433
+    import haiku as hk  # type: ignore
+    import jax.numpy as jnp  # type: ignore
+    import optax  # type: ignore
 
     return hk, jnp, optax
 
@@ -53,6 +57,7 @@ def _require_jax():  # noqa: D401 – helper
 # ---------------------------------------------------------------------------
 # Minimal functional builder (inference‑only)
 # ---------------------------------------------------------------------------
+
 
 def build_residual_net(n_input: int, n_output: int):  # -> (init_fn, apply_fn)
     """Return a (init_fn, apply_fn) pair for a 2‑layer tanh MLP."""
@@ -78,8 +83,8 @@ class ResidualNetConfig:
     in_dim: int
     out_dim: int
     hidden: Sequence[int] = (64, 32)
-    lr: float = 3e‑3
-    l2: float = 1e‑4
+    lr: float = 3e-3
+    l2: float = 1e-4
     seed: int = 0
 
 
@@ -94,7 +99,7 @@ class ResidualNet:
 
     def _lazy_init(self):  # noqa: D401
         hk, jnp, optax = _require_jax()
-        import jax  # type: ignore  # noqa: WPS433
+        import jax  # type: ignore
 
         self._jnp = jnp
         self._jax = jax
@@ -121,7 +126,9 @@ class ResidualNet:
         def _step(params, opt_state, xb, yb):
             preds = self._forward.apply(params, xb)
             loss = jnp.mean((preds - yb) ** 2)
-            grads = jax.grad(lambda p: jnp.mean((self._forward.apply(p, xb) - yb) ** 2))(params)
+            grads = jax.grad(
+                lambda p: jnp.mean((self._forward.apply(p, xb) - yb) ** 2)
+            )(params)
             updates, opt_state2 = self._opt_update(grads, opt_state)
             params2 = optax.apply_updates(params, updates)
             return params2, opt_state2, loss
@@ -136,14 +143,24 @@ class ResidualNet:
 
     # training --------------------------------------------------------------
 
-    def fit(self, x_train, y_train, *, epochs: int = 2000, batch_size: int | None = None, verbose: int = 0):
-        jnp, jax = self._jnp, self._jax
+    def fit(
+        self,
+        x_train,
+        y_train,
+        *,
+        epochs: int = 2000,
+        batch_size: int | None = None,
+        verbose: int = 0,
+    ):
+        jax = self._jax
         key = jax.random.PRNGKey(self.cfg.seed ^ 0x123456)
 
         if batch_size is None or batch_size >= x_train.shape[0]:
             # full‑batch
             for k in range(epochs):
-                self.params, self.opt_state, loss = self._step(self.params, self.opt_state, x_train, y_train)
+                self.params, self.opt_state, loss = self._step(
+                    self.params, self.opt_state, x_train, y_train
+                )
                 if verbose and k % verbose == 0:
                     print(f"[{k}] MSE = {loss:.4e}")
         else:
@@ -152,7 +169,9 @@ class ResidualNet:
                 key, subk = jax.random.split(key)
                 idx = jax.random.choice(subk, n, (batch_size,), replace=False)
                 xb, yb = x_train[idx], y_train[idx]
-                self.params, self.opt_state, loss = self._step(self.params, self.opt_state, xb, yb)
+                self.params, self.opt_state, loss = self._step(
+                    self.params, self.opt_state, xb, yb
+                )
                 if verbose and k % verbose == 0:
                     print(f"[{k}] mini MSE = {loss:.4e}")
         return self
