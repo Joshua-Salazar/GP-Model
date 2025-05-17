@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import importlib
 import types
-from typing import Any, Callable
+from typing import Callable
 
 __all__ = [
     "data",
@@ -31,6 +31,7 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # Lazy sub‑module loader (keeps import footprint tiny)
 # ---------------------------------------------------------------------------
+
 
 def _lazy(name: str) -> Callable[[], types.ModuleType]:
     """Return a proxy loader so ``import utils.<name>`` is truly lazy."""
