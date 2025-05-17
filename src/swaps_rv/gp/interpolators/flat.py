@@ -28,7 +28,6 @@ Notes
 
 from __future__ import annotations
 
-import math
 from typing import Sequence
 
 try:
@@ -112,11 +111,12 @@ class FlatForward:
 # Registry hook used by gp.interpolators.__init__.py
 # -------------------------------------------------------------------------
 
+
 def factory(*args, **kwargs):
     """Entry-point required by the registry (`get("flat")`)."""
     return FlatForward(*args, **kwargs)
 
+
 # ---------------------------------------------------------------------------
 # public alias expected by the registry
 Interpolator = FlatForward
-

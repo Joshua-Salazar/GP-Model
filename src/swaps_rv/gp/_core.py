@@ -14,7 +14,6 @@ heap‑allocated by Numba without relying on Python objects.
 from __future__ import annotations
 
 import numpy as np
-import numpy.linalg as npl  # kept for non‑JIT code paths; *inside* @njit we use np.linalg
 
 # ---------------------------------------------------------------------------
 # Optional Numba import – graceful degradation on lightweight installs
@@ -36,6 +35,7 @@ except ModuleNotFoundError:  # pragma: no cover – optional acceleration
         """Serial replacement for numba.prange."""
 
         return range(n)
+
 
 # ---------------------------------------------------------------------------
 # Covariance matrices
@@ -112,6 +112,3 @@ def gp_conditional_cov(
     """Posterior covariance Σ_x − Λ Σ_y⁻¹ Λᵀ  (eq. 9)."""
     L = np.linalg.solve(Σ_y, Σ_x.T)  # Σ_y⁻¹ Λᵀ
     return Σ - Σ_x @ L
-
-
-

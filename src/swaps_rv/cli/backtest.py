@@ -22,16 +22,16 @@ from typing import List
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
-
+from ann.residual_net import ResidualNet, ResidualNetConfig
 from gp.tiered_gp import TieredGP
-from ann.residual_net import ResidualNet, ResidualNetConfig  # new API
+from tqdm import tqdm
 from utils import calibration as ucal
-from utils import data as udata  # (unused for now, kept for future live‑feed work)
+from utils import data as udata  # noqa: F401 – reserved for future live-feed work
 
 # --------------------------------------------------------------------------- #
 # CLI helpers
 # --------------------------------------------------------------------------- #
+
 
 def _parse(argv: List[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
@@ -47,14 +47,18 @@ def _parse(argv: List[str] | None) -> argparse.Namespace:
         choices=["USD", "EUR", "GBP", "JPY"],
         help="Market currency (holiday calendar).",
     )
-    p.add_argument("--lookback", type=int, default=750, help="Days to feed the ANN (≈3y).")
+    p.add_argument(
+        "--lookback", type=int, default=750, help="Days to feed the ANN (≈3y)."
+    )
     p.add_argument(
         "--out",
         type=pathlib.Path,
         default=pathlib.Path("bt") / datetime.now().strftime("%Y-%m-%d_%H%M"),
         help="Output folder.",
     )
-    p.add_argument("--cache", action="store_true", help="Cache per‑day GP pickles for debug.")
+    p.add_argument(
+        "--cache", action="store_true", help="Cache per‑day GP pickles for debug."
+    )
     p.add_argument("--jit", action="store_true", help="Enable Numba JIT in TieredGP.")
 
     return p.parse_args(argv)
@@ -63,6 +67,7 @@ def _parse(argv: List[str] | None) -> argparse.Namespace:
 # --------------------------------------------------------------------------- #
 # Back‑test driver (signals only)
 # --------------------------------------------------------------------------- #
+
 
 def main(argv: List[str] | None = None):  # pragma: no cover
     args = _parse(argv)

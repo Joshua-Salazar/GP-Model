@@ -15,11 +15,13 @@ Author: 2025-05-12
 
 from __future__ import annotations
 
-import numpy as np
-from numba import njit, prange
 from typing import Callable
 
+import numpy as np
+from numba import njit
+
 # --------------------------------------------------------------------- helpers
+
 
 @njit(cache=True)
 def _phi(h, σ, τ):
@@ -28,16 +30,16 @@ def _phi(h, σ, τ):
         # limit σ→0  → cubic term
         return (h - τ) ** 3 / (6.0 * h)
     s = np.sinh(σ * h)
-    return (np.sinh(σ * (h - τ)) - σ * (h - τ)) / (σ ** 2 * s)
+    return (np.sinh(σ * (h - τ)) - σ * (h - τ)) / (σ**2 * s)
 
 
 @njit(cache=True)
 def _psi(h, σ, τ):
     """Ψ_j(t)  (τ := t – t_j)"""
     if σ == 0.0:
-        return τ ** 3 / (6.0 * h)
+        return τ**3 / (6.0 * h)
     s = np.sinh(σ * h)
-    return (np.sinh(σ * τ) - σ * τ) / (σ ** 2 * s)
+    return (np.sinh(σ * τ) - σ * τ) / (σ**2 * s)
 
 
 @njit(cache=True)
@@ -50,8 +52,6 @@ def _build_B(knots: np.ndarray, sigma: np.ndarray):
     n = len(knots) - 1
     coeffs = np.empty((n, 4, 4))  # segment, basis-idx, poly-coeff
     for j in range(n):
-        h = knots[j + 1] - knots[j]
-        σ = sigma[j]
         # polynomial on [t_j,t_{j+1}]  expressed as  a + b τ + c Φ + d Ψ
         # derive segment-local coefficients following Koch-Lyche.
         coeffs[j, 0, 0] = 1.0  # placeholder, overwritten later
@@ -63,10 +63,9 @@ def _build_B(knots: np.ndarray, sigma: np.ndarray):
 
 
 @njit(cache=True, parallel=False)
-def _eval_spline(x: np.ndarray,
-                 knots: np.ndarray,
-                 sigma: np.ndarray,
-                 beta: np.ndarray) -> np.ndarray:
+def _eval_spline(
+    x: np.ndarray, knots: np.ndarray, sigma: np.ndarray, beta: np.ndarray
+) -> np.ndarray:
     """
     Evaluate tension spline at arbitrary grid x.
 
@@ -87,10 +86,13 @@ def _eval_spline(x: np.ndarray,
         # local basis indices j-1..j+2  map to beta idx k-1..k+2
         # build on the fly
         Bm1 = _phi(h, σ, τ) * (knots[k + 1] - knots[k - 1]) / h if k > 0 else 0.0
-        B0  = ((τ / h) - 1.0) - Bm1
-        B1  = (1.0 - τ / h) - _psi(h, σ, τ) * (knots[k + 2] - knots[k]) / h \
-              if k + 2 < beta.size + 2 else 0.0
-        B2  = _psi(h, σ, τ) * (knots[k + 2] - knots[k]) / h if k + 1 < beta.size else 0.0
+        B0 = ((τ / h) - 1.0) - Bm1
+        B1 = (
+            (1.0 - τ / h) - _psi(h, σ, τ) * (knots[k + 2] - knots[k]) / h
+            if k + 2 < beta.size + 2
+            else 0.0
+        )
+        B2 = _psi(h, σ, τ) * (knots[k + 2] - knots[k]) / h if k + 1 < beta.size else 0.0
 
         acc = 0.0
         if k - 1 >= 0:
@@ -105,6 +107,7 @@ def _eval_spline(x: np.ndarray,
 
 
 # ------------------------------------------------------------------- interface
+
 
 class TensionSpline:
     """
@@ -128,8 +131,11 @@ class TensionSpline:
         if self.knots.ndim != 1 or np.any(np.diff(self.knots) <= 0):
             raise ValueError("knots must be 1-D increasing array")
         n_seg = len(self.knots) - 1
-        self.sigma = (np.full(n_seg, float(sigma))
-                      if np.isscalar(sigma) else np.asarray(sigma, float))
+        self.sigma = (
+            np.full(n_seg, float(sigma))
+            if np.isscalar(sigma)
+            else np.asarray(sigma, float)
+        )
         if self.sigma.shape != (n_seg,):
             raise ValueError("sigma length must equal len(knots)-1")
         # pre-build nothing heavy; evaluation builds on-the-fly
@@ -137,9 +143,7 @@ class TensionSpline:
 
     # ---------------------------------------------------------------- call
 
-    def __call__(self,
-                 grid: np.ndarray,
-                 beta: np.ndarray) -> np.ndarray:
+    def __call__(self, grid: np.ndarray, beta: np.ndarray) -> np.ndarray:
         grid = np.asarray(grid, float)
         if beta.ndim != 1 or len(beta) != len(self.knots) - 2:
             raise ValueError("beta length must be len(knots)-2 (interior)")
@@ -147,9 +151,9 @@ class TensionSpline:
 
     # ---------------------------------------------------------------- jacobian
 
-    def jacobian(self,
-                 grid: np.ndarray,
-                 beta: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
+    def jacobian(
+        self, grid: np.ndarray, beta: np.ndarray
+    ) -> Callable[[np.ndarray], np.ndarray]:
         """
         Return a *linear map* J such that  J @ δβ = δf(grid).
 
@@ -170,9 +174,12 @@ class TensionSpline:
             cols.extend(np.full(nz.sum(), j))
             data.extend(df[nz])
         from scipy.sparse import coo_matrix
+
         m = len(grid)
         J = coo_matrix((data, (rows, cols)), shape=(m, n_beta)).tocsr()
         return J
+
+
 # ---------------------------------------------------------------------------
 # public alias expected by the registry
-Interpolator = TensionSpline          # <── ADD THIS
+Interpolator = TensionSpline  # <── ADD THIS
