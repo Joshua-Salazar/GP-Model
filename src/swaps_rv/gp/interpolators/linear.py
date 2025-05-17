@@ -44,7 +44,7 @@ class LinearFwd:
 
         # slopes per segment
         h = _np.diff(self.t)
-        self._s = _np.diff(self.f) / h  # slope
+        self._s = _np.diff(self.f) / h          # slope
         self._h = h
 
         # cumulative primitive F(t) = ∫₀ᵗ f(u) du on knots
@@ -54,12 +54,10 @@ class LinearFwd:
             a = self.f[i]
             s = self._s[i]
             dt = h[i]
-            F_vals = (
-                F_vals.at[i + 1].set(F_vals[i] + a * dt + 0.5 * s * dt**2)
-                if hasattr(F_vals, "at")
-                else _np.concatenate(
-                    (F_vals[: i + 1], [F_vals[i] + a * dt + 0.5 * s * dt**2])
-                )
+            F_vals = F_vals.at[i + 1].set(
+                F_vals[i] + a * dt + 0.5 * s * dt**2
+            ) if hasattr(F_vals, "at") else _np.concatenate(
+                (F_vals[: i + 1], [F_vals[i] + a * dt + 0.5 * s * dt**2])
             )
         self._Fgrid = F_vals
 
@@ -98,10 +96,7 @@ class LinearFwd:
 # Registry entry point expected by gp.interpolators.__init__
 # ------------------------------------------------------------------ #
 
-
 def factory(*args, **kwargs):
     return LinearFwd(*args, **kwargs)
-
-
 # good ────────────────────────────────────────────────
 Interpolator = LinearFwd

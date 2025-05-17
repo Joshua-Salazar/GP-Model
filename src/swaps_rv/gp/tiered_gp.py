@@ -42,7 +42,6 @@ except ModuleNotFoundError:  # pragma: no cover – run without numba
 
         return _decor
 
-
 # --------------------------------------------------------------------------
 # NOTE: fixed intra-package import – use relative path
 # --------------------------------------------------------------------------
@@ -222,9 +221,7 @@ class TieredGP:  # noqa: D101 – high-level class
         for tier in self.tiers:
             if tier.constraints:
                 idx.extend(tier.constraints)
-        return (
-            self.t[np.asarray(sorted(set(idx)), int)] if idx else np.asarray([], float)
-        )
+        return self.t[np.asarray(sorted(set(idx)), int)] if idx else np.asarray([], float)
 
     def illiquid_knots(self) -> np.ndarray:
         return np.setdiff1d(self.knots, self.liquid_knots(), assume_unique=True)

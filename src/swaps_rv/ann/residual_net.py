@@ -48,6 +48,7 @@ def _require_jax():  # noqa: D401 – helper
         )
 
     import haiku as hk  # type: ignore
+
     import jax.numpy as jnp  # type: ignore
     import optax  # type: ignore
 
@@ -140,9 +141,6 @@ class ResidualNet:
     def __call__(self, x):  # noqa: D401
         """Forward pass Δf(X)."""
         return self._forward.apply(self.params, x)
-
-    def predict(self, x):
-        return self.__call__(x)
 
     # training --------------------------------------------------------------
 

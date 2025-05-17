@@ -6,7 +6,10 @@ cli.backtest (risk‑stripped)
 Replay a folder of end‑of‑day swap quote CSVs through **TieredGP → ANN** and
 store the daily *alpha* signal (the ANN‑predicted residual at the knot grid).
 
-
+Removed functionality (compared with the original repo)
+------------------------------------------------------
+* No DV01 / carry‑roll, notional, or PnL calculations
+* No tear‑sheet; only the alpha time‑series gets written
 """
 from __future__ import annotations
 
@@ -19,10 +22,11 @@ from typing import List
 
 import numpy as np
 import pandas as pd
-from ann.residual_net import ResidualNet, ResidualNetConfig  # new API
-from gp.tiered_gp import TieredGP
 from tqdm import tqdm
-from utils import calibration as ucal
+
+from swaps_rv.ann.residual_net import ResidualNet, ResidualNetConfig  # new API
+from swaps_rv.gp.tiered_gp import TieredGP
+from swaps_rv.utils import calibration as ucal
 
 # --------------------------------------------------------------------------- #
 # CLI helpers
