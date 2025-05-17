@@ -39,8 +39,8 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:  # pragma: no cover – import only for static typing
-    from ann.residual_net import ResidualNet
-    from gp.tiered_gp import TieredGP
+    from swaps_rv.ann.residual_net import ResidualNet
+    from swaps_rv.gp.tiered_gp import TieredGP
 
 # --------------------------------------------------------------------------- #
 # internal helper

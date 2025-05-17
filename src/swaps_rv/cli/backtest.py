@@ -6,10 +6,7 @@ cli.backtest (risk‑stripped)
 Replay a folder of end‑of‑day swap quote CSVs through **TieredGP → ANN** and
 store the daily *alpha* signal (the ANN‑predicted residual at the knot grid).
 
-Removed functionality (compared with the original repo)
-------------------------------------------------------
-* No DV01 / carry‑roll, notional, or PnL calculations
-* No tear‑sheet; only the alpha time‑series gets written
+
 """
 from __future__ import annotations
 
