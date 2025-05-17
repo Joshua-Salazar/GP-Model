@@ -5,15 +5,18 @@ utils.data
 Thin I/O layer – keeps *all* external data access in one place so the core
 GP / ANN logic stays completely file-system agnostic.
 
-Only three lightweight, **pandas-based** helpers are exposed; anything more
-complex (full-blown data-base adapters, async feeds, …) should live in the
-caller’s code-base and feed *DataFrame*s into these functions.
+Only a handful of lightweight helpers are exposed; anything more complex
+(full-blown data-base adapters, async feeds, …) should live in the caller’s
+code-base and feed *DataFrame*s into these functions.
 
 Functions
 ---------
 
 load_quotes(path, *, tz="UTC")      -> pd.DataFrame
     CSV ↦ tidy frame with **timestamp index** (tz-aware) and _mid_ column.
+
+load_yaml(path)                     -> Any
+    Load a YAML/JSON configuration file and return the parsed object.
 
 load_curve_snapshots(dir_)         -> list[TieredGP]
     Read a directory of pickled GP snapshots (chronological sort).
@@ -29,12 +32,12 @@ from __future__ import annotations
 
 import datetime as _dt
 import gzip
+import json
 import pickle
 from pathlib import Path
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, Any, List
 
 import pandas as pd
-
 
 if TYPE_CHECKING:  # pragma: no cover
     from gp.tiered_gp import TieredGP
@@ -58,6 +61,27 @@ def load_quotes(path: str | Path, *, tz: str = "UTC") -> pd.DataFrame:
     )
     df["timestamp"] = df["timestamp"].dt.tz_localize(tz)
     return df.set_index(["timestamp", "ticker"]).sort_index().astype({"mid": "float64"})
+
+
+# --------------------------------------------------------------------------- #
+# Lightweight YAML/JSON loader
+# --------------------------------------------------------------------------- #
+
+
+def load_yaml(path: str | Path) -> Any:
+    """Parse a YAML or JSON file and return the deserialised object."""
+    p = Path(path).expanduser().resolve()
+    with p.open("r", encoding="utf-8") as fh:
+        if p.suffix.lower() == ".json":
+            return json.load(fh)
+
+        try:
+            import yaml  # type: ignore
+        except ModuleNotFoundError as exc:  # pragma: no cover - optional dep
+            msg = "PyYAML is required to parse YAML files"
+            raise ImportError(msg) from exc
+
+        return yaml.safe_load(fh)
 
 
 # --------------------------------------------------------------------------- #
