@@ -35,9 +35,8 @@ from typing import TYPE_CHECKING, List
 
 import pandas as pd
 
-
 if TYPE_CHECKING:  # pragma: no cover
-    from gp.tiered_gp import TieredGP
+    from swaps_rv.gp.tiered_gp import TieredGP
 
 # --------------------------------------------------------------------------- #
 # Quotes loader

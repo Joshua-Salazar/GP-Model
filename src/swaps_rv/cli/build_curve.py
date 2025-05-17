@@ -23,11 +23,12 @@ from datetime import datetime
 
 import numpy as np  # noqa: F401  (kept for future extensions)
 import pandas as pd
-from ann.residual_net import ResidualNet
-from gp.tiered_gp import TieredGP
-from utils import calibration as ucal
-from utils import data as udata
-from utils import plots as uplt
+
+from swaps_rv.ann.residual_net import ResidualNet
+from swaps_rv.gp.tiered_gp import TieredGP
+from swaps_rv.utils import calibration as ucal
+from swaps_rv.utils import data as udata
+from swaps_rv.utils import plots as uplt
 
 
 # --------------------------------------------------------------------------- #
