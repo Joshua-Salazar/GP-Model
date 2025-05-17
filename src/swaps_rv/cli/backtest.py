@@ -19,10 +19,10 @@ from typing import List
 
 import numpy as np
 import pandas as pd
-from ann.residual_net import ResidualNet, ResidualNetConfig  # new API
-from gp.tiered_gp import TieredGP
+from swaps_rv.ann.residual_net import ResidualNet, ResidualNetConfig  # new API
+from swaps_rv.gp.tiered_gp import TieredGP
 from tqdm import tqdm
-from utils import calibration as ucal
+from swaps_rv.utils import calibration as ucal
 
 # --------------------------------------------------------------------------- #
 # CLI helpers
