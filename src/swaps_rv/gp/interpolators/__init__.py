@@ -6,7 +6,7 @@ Each concrete interpolator exposes a NumPy-ish call-signature
 
 Implemented back-ends
 ---------------------
-flat     – piece-wise constant fwd-rate (“flat forward”ssssssssss
+flat     – piece-wise constant fwd-rate (“flat forward”)
 linear   – C⁰ linear IFR
 cubic    – C² cubic spline (natural or clamped)
 tension  – Andersen (2005) hyperbolic / GB tension spline
