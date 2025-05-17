@@ -17,17 +17,16 @@ from __future__ import annotations
 
 import argparse
 import pathlib
-import sys
 import pickle
+import sys
 from datetime import datetime
 
-import numpy as np  # noqa: F401  (kept for future extensions)
+import numpy as np  # noqa: F401
 import pandas as pd
-
+from ann.residual_net import ResidualNet
 from gp.tiered_gp import TieredGP
-from ann.residual_net import ResidualNet          # ← unified class name
-from utils import data as udata
 from utils import calibration as ucal
+from utils import data as udata
 from utils import plots as uplt
 
 
@@ -106,7 +105,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover
         quotes,
         tiers=tier_cfg,
         ois_curve=ois_quotes,
-        kernel="Brownian",        # default
+        kernel="Brownian",  # default
         optimize_prior=True,
         jit=args.jit,
     )
@@ -131,8 +130,10 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover
     # ------------------------------------------------------------------ #
     # 5. Diagnostics
     if args.plot:
-        uplt.curve(gp, save_to=args.out / "ifr.png")          # IFR curve
-        uplt.ann_surface(ann, save_to=args.out / "ann.png")   # ANN residual map
+        uplt.curve(gp, save_to=args.out / "ifr.png")  # IFR curve
+        uplt.ann_surface(
+            ann, X_train, y_train, save_to=args.out / "ann.png"
+        )  # ANN residual map
 
     print("✅  Build finished:", args.out)
 

@@ -25,7 +25,7 @@ No DV01 / bucket‑risk code is kept in this trimmed version.
 
 from __future__ import annotations
 
-from typing import Sequence, TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -39,12 +39,13 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:  # pragma: no cover – import only for static typing
-    from gp.tiered_gp import TieredGP
     from ann.residual_net import ResidualNet
+    from gp.tiered_gp import TieredGP
 
 # --------------------------------------------------------------------------- #
 # internal helper
 # --------------------------------------------------------------------------- #
+
 
 def _ax(ax):
     if ax is None:
@@ -56,6 +57,7 @@ def _ax(ax):
 # --------------------------------------------------------------------------- #
 # GP visualisations
 # --------------------------------------------------------------------------- #
+
 
 def curve(gp: "TieredGP", *, ax=None, show_liq: bool = True):
     """Instantaneous‑forward curve plus par‑swap markers."""
@@ -105,6 +107,7 @@ def residuals(gp: "TieredGP", *, ax=None):
 # ANN diagnostics
 # --------------------------------------------------------------------------- #
 
+
 def ann_surface(
     net: "ResidualNet",
     X: np.ndarray,
@@ -142,6 +145,7 @@ def ann_surface(
 # --------------------------------------------------------------------------- #
 # Thin wrappers to keep backward‑compat with the original CLI scripts
 # --------------------------------------------------------------------------- #
+
 
 def plot_ifr(gp: "TieredGP", *, save_to: str | None = None, **kwargs):
     """Wrapper around :pyfunc:`curve` that also handles file output."""

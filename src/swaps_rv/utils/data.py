@@ -31,9 +31,12 @@ import datetime as _dt
 import gzip
 import pickle
 from pathlib import Path
-from typing import List
+from typing import TYPE_CHECKING, List
 
 import pandas as pd
+
+if TYPE_CHECKING:  # pragma: no cover - import only for type hints
+    from gp.tiered_gp import TieredGP
 
 
 # --------------------------------------------------------------------------- #
@@ -54,11 +57,7 @@ def load_quotes(path: str | Path, *, tz: str = "UTC") -> pd.DataFrame:
         .dropna()
     )
     df["timestamp"] = df["timestamp"].dt.tz_localize(tz)
-    return (
-        df.set_index(["timestamp", "ticker"])
-        .sort_index()
-        .astype({"mid": "float64"})
-    )
+    return df.set_index(["timestamp", "ticker"]).sort_index().astype({"mid": "float64"})
 
 
 # --------------------------------------------------------------------------- #
@@ -70,7 +69,7 @@ def _ts_from_filename(fname: str) -> _dt.date:
     return _dt.datetime.strptime(fname[:10], "%Y-%m-%d").date()
 
 
-def load_curve_snapshots(dir_: str | Path) -> List["TieredGP"]:
+def load_curve_snapshots(dir_: str | Path) -> List[TieredGP]:
     """
     Walk *dir_* and unpickle every ``*.pkl(.gz)`` file.
 
@@ -78,18 +77,18 @@ def load_curve_snapshots(dir_: str | Path) -> List["TieredGP"]:
     Returned list **is sorted** by value-date ascending.
     """
     dir_path = Path(dir_).expanduser().resolve()
-    snaps: list[tuple[_dt.date, "TieredGP"]] = []
+    snaps: list[tuple[_dt.date, TieredGP]] = []
 
     for p in dir_path.glob("*.pkl*"):
         ts = _ts_from_filename(p.name)
-        with (gzip.open(p, "rb") if p.suffix == ".gz" else p.open("rb")) as fh:
+        with gzip.open(p, "rb") if p.suffix == ".gz" else p.open("rb") as fh:
             snaps.append((ts, pickle.load(fh)))
 
     snaps.sort(key=lambda t: t[0])
     return [s for _, s in snaps]
 
 
-def dump_curve(gp: "TieredGP", dir_: str | Path) -> Path:
+def dump_curve(gp: TieredGP, dir_: str | Path) -> Path:
     """
     Pickle one *TieredGP* snapshot as ``YYYY-MM-DD.pkl.gz`` under *dir_*.
 
