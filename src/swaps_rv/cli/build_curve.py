@@ -132,7 +132,9 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover
     # 5. Diagnostics
     if args.plot:
         uplt.curve(gp, save_to=args.out / "ifr.png")          # IFR curve
-        uplt.ann_surface(ann, save_to=args.out / "ann.png")   # ANN residual map
+        uplt.ann_surface(
+            ann, X_train, y_train, save_to=args.out / "ann.png"
+        )   # ANN residual map
 
     print("✅  Build finished:", args.out)
 
