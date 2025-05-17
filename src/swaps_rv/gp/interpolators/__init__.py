@@ -43,6 +43,7 @@ def get(tag: str) -> Type:
 #   1) public symbol ``Interpolator``
 #   2) ``<Name>Interpolator`` where <Name> is Flat / Linear / …
 
+
 def _import_and_register(name: str):
     mod = import_module(f".{name}", __name__)  # gp.interpolators.<name>
 

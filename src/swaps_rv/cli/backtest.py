@@ -22,7 +22,6 @@ from typing import List
 
 import numpy as np
 import pandas as pd
-
 from ann.residual_net import ResidualNet, ResidualNetConfig  # new API
 from gp.tiered_gp import TieredGP
 from tqdm import tqdm
